@@ -63,6 +63,7 @@ void uselessRampage::Init(const char* /*commandLine*/ )
     bz_debugMessage(4,"uselessRampage plugin loaded");
     
     //Register the events...
+    Register(bz_eFlagDroppedEvent);
     Register(bz_ePlayerDieEvent);
     Register(bz_ePlayerPartEvent);
 }
@@ -77,6 +78,18 @@ void uselessRampage::Event(bz_EventData* eventData)
 {
     switch (eventData->eventType)
     {
+        case bz_eFlagDroppedEvent:
+        {
+            bz_FlagDroppedEventData_V1* flagdrop = (bz_FlagDroppedEventData_V1*)eventData;
+            
+            if (strcmp(bz_getName(flagdrop->flagID).c_str(), "US"))
+            {
+                consecutiveUSKils[flagdrop->playerID] = 0;
+                bz_sendTextMessage(BZ_SERVER, flagdrop->playerID, "You dropped US");
+            }
+        }
+        break;
+        
         case bz_ePlayerDieEvent:
         {
             bz_PlayerDieEventData_V1* diedata = (bz_PlayerDieEventData_V1*)eventData;
@@ -89,7 +102,7 @@ void uselessRampage::Event(bz_EventData* eventData)
                 int killerScore = bz_getPlayerWins(diedata->killerID); //Get their normal score
                 if (playerKills[diedata->killerID] < 20)
                 {
-                    killerScore = killerScore + playerKills[diedata->killerID]; //Increment by whatever range of multiplication they are at based on the array position
+                    killerScore = killerScore + playerKills[diedata->killerID] - 1; //Increment by whatever range of multiplication they are at based on the array position
                 }
                 else
                 {
@@ -98,7 +111,13 @@ void uselessRampage::Event(bz_EventData* eventData)
                 
                 bz_setPlayerWins(diedata->killerID, killerScore); //Give the player their new score
                 
-                if (consecutiveUSKils[diedata->killerID] == 20)
+                if (consecutiveUSKils[diedata->killerID] == 10)
+                {
+                    bz_BasePlayerRecord *pr = bz_getPlayerByIndex(diedata->killerID);
+                    bz_sendTextMessagef(BZ_SERVER, BZ_ALLUSERS, "We finally found a use for %s. 10 kills with useless", pr->callsign.c_str());
+                    bz_freePlayerRecord(pr);
+                }
+                else if (consecutiveUSKils[diedata->killerID] == 20)
                 {
                     bz_BasePlayerRecord *pr = bz_getPlayerByIndex(diedata->killerID);
                     bz_sendTextMessagef(BZ_SERVER, BZ_ALLUSERS, "Holy shit! %s is kicking ass with the useless flag!", pr->callsign.c_str());
