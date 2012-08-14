@@ -82,10 +82,9 @@ void uselessRampage::Event(bz_EventData* eventData)
         {
             bz_FlagDroppedEventData_V1* flagdrop = (bz_FlagDroppedEventData_V1*)eventData;
             
-            if (strcmp(bz_getName(flagdrop->flagID).c_str(), "US"))
+            if (strcmp(bz_getName(flagdrop->flagID).c_str(), "US") == 0)
             {
                 consecutiveUSKils[flagdrop->playerID] = 0;
-                bz_sendTextMessage(BZ_SERVER, flagdrop->playerID, "You dropped US");
             }
         }
         break;
