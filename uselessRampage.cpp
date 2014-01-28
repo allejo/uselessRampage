@@ -1,146 +1,125 @@
 /*
-Copyright (c) 2012 Vladimir Jimenez
-All rights reserved.
+UselessRampage
+    Copyright (C) 2014 Vladimir "allejo" Jimenez
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-1. Redistributions of source code must retain the above copyright
-     notice, this list of conditions and the following disclaimer.
-2. Redistributions in binary form must reproduce the above copyright
-     notice, this list of conditions and the following disclaimer in the
-     documentation and/or other materials provided with the distribution.
-3. The name of the author may not be used to endorse or promote products
-     derived from this software without specific prior written permission.
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
 
-THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
-IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
-IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
-INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
-NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
-THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 
-
-*** Useless Rampage Details ***
-Author:
-Vladimir Jimenez (allejo)
-
-Description:
-Go on a rampage with useless and get rewarded
-
-Slash Commands:
-N/A
-
-License:
-BSD
-
-Version:
-1.0
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+
+#include <cstring>
 
 #include "bzfsAPI.h"
 #include "plugin_utils.h"
 
-class uselessRampage : public bz_Plugin
+const int MAX_KILLS_POINTS = 20;
+
+class UselessRampage : public bz_Plugin
 {
-    virtual const char* Name (){return "Useless Rampage";}
+public:
+    virtual const char* Name () {return "UselessRampage";}
     virtual void Init (const char* config);
-    virtual void Event (bz_EventData* eventData);
-    virtual void Cleanup ();
+    virtual void Event (bz_EventData *eventData);
+    virtual void Cleanup (void);
+
+    int consecutiveKillsWithUS[256];  // Keep count of how many consecutive kills a player has made with useless
+    int consecutiveKills[256];        // Keep count of how many consecutive kills a player has made
 };
 
-BZ_PLUGIN(uselessRampage);
+BZ_PLUGIN(UselessRampage)
 
-int playerKills[256] = {0};
-int consecutiveUSKils[256] = {0};
-
-void uselessRampage::Init(const char* /*commandLine*/ )
+void UselessRampage::Init (const char* commandLine)
 {
-    bz_debugMessage(4,"uselessRampage plugin loaded");
-    
-    //Register the events...
+    // Register our events with Register()
     Register(bz_eFlagDroppedEvent);
     Register(bz_ePlayerDieEvent);
-    Register(bz_ePlayerPartEvent);
+    Register(bz_ePlayerJoinEvent);
 }
 
-void uselessRampage::Cleanup(void)
+void UselessRampage::Cleanup (void)
 {
-    bz_debugMessage(4,"uselessRampage plugin unloaded");
-    Flush();
+    Flush(); // Clean up all the events
 }
 
-void uselessRampage::Event(bz_EventData* eventData)
+void UselessRampage::Event (bz_EventData *eventData)
 {
     switch (eventData->eventType)
     {
-        case bz_eFlagDroppedEvent:
+        case bz_eFlagDroppedEvent: // This event is called each time a flag is dropped by a player.
         {
-            bz_FlagDroppedEventData_V1* flagdrop = (bz_FlagDroppedEventData_V1*)eventData;
-            
-            if (strcmp(bz_getName(flagdrop->flagID).c_str(), "US") == 0)
+            bz_FlagDroppedEventData_V1* flagDropData = (bz_FlagDroppedEventData_V1*)eventData;
+
+            if (strcmp(bz_getName(flagDropData->flagID).c_str(), "US") == 0) // If a player dropped the Useless flag by choice or death...
             {
-                consecutiveUSKils[flagdrop->playerID] = 0;
+                consecutiveKillsWithUS[flagDropData->playerID] = 0; // Reset their counter because their spree is ruined
             }
         }
         break;
-        
-        case bz_ePlayerDieEvent:
+
+        case bz_ePlayerDieEvent: // This event is called each time a tank is killed.
         {
-            bz_PlayerDieEventData_V1* diedata = (bz_PlayerDieEventData_V1*)eventData;
-            playerKills[diedata->killerID]++; //Give the player credit and increment their number of kills
-                
-            if (diedata->flagKilledWith == "US") //A player is killed with the Useless flag
+            bz_PlayerDieEventData_V1* dieData = (bz_PlayerDieEventData_V1*)eventData;
+
+            // Variables for easier reference
+            int killerID = dieData->killerID;
+            int victimID = dieData->playerID;
+
+            // Always increment the number of consecutive kills the killer has made
+            consecutiveKills[killerID]++;
+
+            if (dieData->flagKilledWith == "US") // A player was killed with the Useless flag
             {
-                consecutiveUSKils[diedata->killerID]++; //Give the player credit and increment their number of consecutive kills with useless
-                
-                int killerScore = bz_getPlayerWins(diedata->killerID); //Get their normal score
-                if (playerKills[diedata->killerID] < 20)
+                // Increment the counter for consecutive kills with useless
+                consecutiveKillsWithUS[killerID]++;
+
+                // Get a player's score for easy access
+                int killerScore = bz_getPlayerWins(killerID);
+
+                // Check if a player has gotten the maximum allowed points per kill, if not then we'll get their consecutive
+                // minus one. We subtract one because the server automatically grants the player a point so we don't want to
+                // give the player an extra point when their consecutive kill count is one.
+                killerScore += (consecutiveKills[killerID] < MAX_KILLS_POINTS) ? consecutiveKills[killerID] - 1 : MAX_KILLS_POINTS;
+
+                bz_setPlayerWins(killerID, killerScore);
+
+                // Special messages for when players reach milestones in their spree
+                if (consecutiveKillsWithUS[killerID] == 10)
                 {
-                    killerScore = killerScore + playerKills[diedata->killerID] - 1; //Increment by whatever range of multiplication they are at based on the array position
+                    bz_sendTextMessagef(BZ_SERVER, BZ_ALLUSERS, "We finally found a use for %s. 10 kills with useless",
+                        bz_getPlayerByIndex(killerID)->callsign.c_str());
                 }
-                else
+                else if (consecutiveKillsWithUS[killerID] == 20)
                 {
-                    killerScore = killerScore + 19; //Limit the max to 20 points per kill
-                }
-                
-                bz_setPlayerWins(diedata->killerID, killerScore); //Give the player their new score
-                
-                if (consecutiveUSKils[diedata->killerID] == 10)
-                {
-                    bz_BasePlayerRecord *pr = bz_getPlayerByIndex(diedata->killerID);
-                    bz_sendTextMessagef(BZ_SERVER, BZ_ALLUSERS, "We finally found a use for %s. 10 kills with useless", pr->callsign.c_str());
-                    bz_freePlayerRecord(pr);
-                }
-                else if (consecutiveUSKils[diedata->killerID] == 20)
-                {
-                    bz_BasePlayerRecord *pr = bz_getPlayerByIndex(diedata->killerID);
-                    bz_sendTextMessagef(BZ_SERVER, BZ_ALLUSERS, "Holy shit! %s is kicking ass with the useless flag!", pr->callsign.c_str());
-                    bz_freePlayerRecord(pr);
+                    bz_sendTextMessagef(BZ_SERVER, BZ_ALLUSERS, "Holy cow! %s is pwning with the useless flag",
+                        bz_getPlayerByIndex(killerID)->callsign.c_str());
                 }
             }
-            
-            if (playerKills[diedata->playerID] > 0) //They died so let's reset their number of kills with Useless
-            {
-                playerKills[diedata->playerID] = 0;
-                consecutiveUSKils[diedata->playerID] = 0;
-            }
+
+            // Reset the victim's counter since their spree has ended
+            consecutiveKills[victimID] = 0;
+            consecutiveKillsWithUS[victimID] = 0;
         }
         break;
-        
-        case bz_ePlayerPartEvent:
+
+        case bz_ePlayerJoinEvent: // This event is called each time a player joins the game
         {
-            bz_PlayerJoinPartEventData_V1* partdata = (bz_PlayerJoinPartEventData_V1*)eventData;
-            
-            playerKills[partdata->playerID] = 0; //Reset the player slots number of kills with Useless when they leave
-            consecutiveUSKils[partdata->playerID] = 0;
+            bz_PlayerJoinPartEventData_V1* joinData = (bz_PlayerJoinPartEventData_V1*)eventData;
+
+            // Set the player's counters to 0 in case they have not been set or they were set by a previous player
+            consecutiveKills[joinData->playerID] = 0;
+            consecutiveKillsWithUS[joinData->playerID] = 0;
         }
         break;
-        
-        default:break; //So pointless
+
+        default: break;
     }
 }
